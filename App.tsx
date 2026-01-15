@@ -16,6 +16,7 @@ import FacebookPipeline from './components/FacebookPipeline';
 import GHLManager from './components/GHLManager';
 import LeadDetailModal from './components/LeadDetailModal';
 import Settings from './components/Settings';
+import ImessageInbox from './components/ImessageInbox';
 import { Lead, FilterState, UserConfig } from './types';
 import { discoverLeadsBatch, enrichLeadNeural } from './services/geminiService';
 import { saveLeadsToCloud, getLeadsFromCloud, initializeCloudConnection } from './services/cloudPersistenceService';
@@ -26,10 +27,10 @@ const App: React.FC = () => {
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [isWorkerActive, setIsWorkerActive] = useState(false);
   const [workerStatus, setWorkerStatus] = useState('Standby');
-  const [scrapingQueue, setScrapingQueue] = useState<{sector: string, location: string}[]>([]);
+  const [scrapingQueue, setScrapingQueue] = useState<{ sector: string, location: string }[]>([]);
   const [enrichmentQueue, setEnrichmentQueue] = useState<Partial<Lead>[]>([]);
-  
-  const [scripts, setScripts] = useState<{id: string, title: string, content: string, type: 'call' | 'email' | 'sms'}[]>([
+
+  const [scripts, setScripts] = useState<{ id: string, title: string, content: string, type: 'call' | 'email' | 'sms' }[]>([
     { id: '1', title: 'Standaard Call Script', content: 'Hoi {{ceo_name}}, ik zag jullie website...', type: 'call' },
     { id: '2', title: 'Cold Email V1', content: 'Beste {{ceo_name}}, we hebben een audit gedaan...', type: 'email' },
     { id: '3', title: 'SMS Quick Intro', content: 'Robin van CrescoFlow hier! Heb je even tijd?', type: 'sms' }
@@ -124,32 +125,32 @@ const App: React.FC = () => {
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
       <Sidebar activeApp={activeApp} setActiveApp={setActiveApp} totalLeadsCount={allLeads.length} isScraping={isWorkerActive} />
-      
+
       <div className="flex-1 lg:ml-72 flex flex-col h-screen overflow-hidden relative">
         {isWorkerActive && (
           <div className="fixed top-6 right-6 z-[300] bg-slate-900 text-white px-8 py-4 rounded-[30px] shadow-4xl border-l-[10px] border-blue-500 animate-slide-up flex items-center gap-6">
-             <div className="w-3 h-3 bg-blue-500 rounded-full animate-ping"></div>
-             <div>
-                <div className="text-[10px] font-black uppercase tracking-[0.4em]">Neural Engine Active</div>
-                <div className="text-[9px] font-bold text-slate-400 uppercase">{workerStatus}</div>
-             </div>
-             <div className="text-right border-l border-white/10 pl-6">
-                <div className="text-[8px] font-black text-slate-500 uppercase">Wachtrij</div>
-                <div className="text-xs font-black">{scrapingQueue.length + enrichmentQueue.length}</div>
-             </div>
+            <div className="w-3 h-3 bg-blue-500 rounded-full animate-ping"></div>
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-[0.4em]">Neural Engine Active</div>
+              <div className="text-[9px] font-bold text-slate-400 uppercase">{workerStatus}</div>
+            </div>
+            <div className="text-right border-l border-white/10 pl-6">
+              <div className="text-[8px] font-black text-slate-500 uppercase">Wachtrij</div>
+              <div className="text-xs font-black">{scrapingQueue.length + enrichmentQueue.length}</div>
+            </div>
           </div>
         )}
 
         <main className="flex-1 overflow-hidden relative">
           {activeApp === 'dashboard' && <Dashboard isSystemOnline={true} onUpdateLeads={handleUpdateLeads} allLeads={allLeads} onLeadClick={setSelectedLead} />}
-          {activeApp === 'lead-scraper' && <Scraper onStartBackground={handleStartScraping} onStopBackground={() => setIsWorkerActive(false)} isBackgroundActive={isWorkerActive} queueLength={scrapingQueue.length + enrichmentQueue.length} masterDatabase={allLeads} onLeadsFound={() => {}} />}
+          {activeApp === 'lead-scraper' && <Scraper onStartBackground={handleStartScraping} onStopBackground={() => setIsWorkerActive(false)} isBackgroundActive={isWorkerActive} queueLength={scrapingQueue.length + enrichmentQueue.length} masterDatabase={allLeads} onLeadsFound={() => { }} />}
           {activeApp === 'database' && <LeadDatabase allLeads={allLeads} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} onManualImport={(leads) => { setEnrichmentQueue(prev => [...prev, ...leads]); setIsWorkerActive(true); }} />}
           {activeApp === 'cold-calls' && <ColdCallCenter leads={allLeads} scripts={scripts} setScripts={setScripts} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} />}
           {activeApp === 'email-pipeline' && <EmailOutreach allLeads={allLeads} scripts={scripts} setScripts={setScripts} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} />}
           {activeApp === 'sms-pipeline' && <SMSInbox leads={allLeads} scripts={scripts} setScripts={setScripts} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} />}
           {activeApp === 'follow-up' && <FollowUp leads={allLeads} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} />}
-          {activeApp === 'sales-meet' && <SalesMeet sessions={[]} setSessions={() => {}} allLeads={allLeads} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} />}
-          {activeApp === 'agenda' && <Agenda tasks={[]} setTasks={() => {}} leads={allLeads} />}
+          {activeApp === 'sales-meet' && <SalesMeet sessions={[]} setSessions={() => { }} allLeads={allLeads} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} />}
+          {activeApp === 'agenda' && <Agenda tasks={[]} setTasks={() => { }} leads={allLeads} />}
           {activeApp === 'ai-coach' && <AICoach allLeads={allLeads} />}
           {activeApp === 'facebook-funnel' && <FacebookPipeline conversations={[]} allLeads={allLeads} onUpdateLeads={handleUpdateLeads} />}
           {activeApp === 'ghl-manager' && <GHLManager leads={allLeads} onUpdateLeads={handleUpdateLeads} />}
