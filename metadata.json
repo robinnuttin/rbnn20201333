@@ -1,0 +1,9 @@
+{
+  "name": "Copy of CrescoFlow Revenue OS - Enterprise V27",
+  "description": "Enterprise lead generation with bidirectional GoHighLevel sync, VoIP Call simulation, and AI Meeting Analysis.",
+  "requestFramePermissions": [
+    "microphone",
+    "camera",
+    "geolocation"
+  ]
+}
