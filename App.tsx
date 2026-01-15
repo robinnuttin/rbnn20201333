@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import LeadDatabase from './components/LeadDatabase';
@@ -19,38 +19,16 @@ import Settings from './components/Settings';
 import { Lead, FilterState, UserConfig } from './types';
 import { discoverLeadsBatch, enrichLeadNeural } from './services/geminiService';
 import { saveLeadsToCloud, getLeadsFromCloud, initializeCloudConnection } from './services/cloudPersistenceService';
-// Firestore integration (Phase 1)
-import { initializeFirebase, getFirebaseDB, leadsService } from './services/core/firestoreService';
-import { useLeads, firestoreMutations } from './services/core/useFirestore';
-import firebaseConfig, { validateFirebaseConfig } from './config/firebase.config';
 
 const App: React.FC = () => {
   const [activeApp, setActiveApp] = useState('dashboard');
+  const [allLeads, setAllLeads] = useState<Lead[]>([]);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [isWorkerActive, setIsWorkerActive] = useState(false);
   const [workerStatus, setWorkerStatus] = useState('Standby');
   const [scrapingQueue, setScrapingQueue] = useState<{sector: string, location: string}[]>([]);
   const [enrichmentQueue, setEnrichmentQueue] = useState<Partial<Lead>[]>([]);
-
-  // Firestore integration state
-  const [useFirestore, setUseFirestore] = useState(false);
-  const [firestoreReady, setFirestoreReady] = useState(false);
-  const [firebaseError, setFirebaseError] = useState<string | null>(null);
-
-  // Firestore hooks (real-time subscription)
-  const firestoreLeads = useLeads();
-
-  // Local IndexedDB fallback
-  const [allLeadsLocal, setAllLeadsLocal] = useState<Lead[]>([]);
-
-  // Use Firestore if available and enabled, otherwise fallback to IndexedDB
-  const allLeads = useMemo(() => {
-    if (useFirestore && firestoreReady) {
-      return firestoreLeads.leads;
-    }
-    return allLeadsLocal;
-  }, [useFirestore, firestoreReady, firestoreLeads.leads, allLeadsLocal]);
-
+  
   const [scripts, setScripts] = useState<{id: string, title: string, content: string, type: 'call' | 'email' | 'sms'}[]>([
     { id: '1', title: 'Standaard Call Script', content: 'Hoi {{ceo_name}}, ik zag jullie website...', type: 'call' },
     { id: '2', title: 'Cold Email V1', content: 'Beste {{ceo_name}}, we hebben een audit gedaan...', type: 'email' },
@@ -64,52 +42,20 @@ const App: React.FC = () => {
     integrations: { ghl: true }
   });
 
-  // Initialize Firestore on app startup
   useEffect(() => {
-    const initApp = async () => {
-      // Try to initialize Firestore
-      try {
-        const config = validateFirebaseConfig();
-        if (config.valid) {
-          initializeFirebase(firebaseConfig);
-          setUseFirestore(true);
-          setFirestoreReady(true);
-          console.log('✅ Firestore initialized successfully');
-        } else {
-          console.warn('⚠️  Firebase config incomplete:', config.errors);
-          setFirebaseError(config.errors.join(', '));
-        }
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        console.warn('⚠️  Firestore initialization failed:', errorMsg);
-        setFirebaseError(errorMsg);
-      }
-
-      // Always initialize IndexedDB fallback
-      try {
-        await initializeCloudConnection();
-        const leads = await getLeadsFromCloud();
-        setAllLeadsLocal(leads);
-      } catch (err) {
-        console.error('❌ IndexedDB initialization failed:', err);
-      }
+    const startup = async () => {
+      await initializeCloudConnection();
+      const leads = await getLeadsFromCloud();
+      setAllLeads(leads);
     };
-
-    initApp();
+    startup();
   }, []);
 
-  // Sync leads to storage when they change
   useEffect(() => {
-    if (allLeads.length === 0) return;
-
-    if (useFirestore && firestoreReady) {
-      // Firestore auto-syncs via real-time subscription
-      // No additional sync needed
-    } else {
-      // IndexedDB fallback
+    if (allLeads.length > 0) {
       saveLeadsToCloud(allLeads);
     }
-  }, [allLeads, useFirestore, firestoreReady]);
+  }, [allLeads]);
 
   useEffect(() => {
     let timeoutId: number;
@@ -155,38 +101,16 @@ const App: React.FC = () => {
     return () => clearTimeout(timeoutId);
   }, [isWorkerActive, scrapingQueue, enrichmentQueue, allLeads]);
 
-  const handleUpdateLeads = async (updated: Lead[]) => {
-    // Update local state
-    if (!useFirestore || !firestoreReady) {
-      // IndexedDB mode
-      setAllLeadsLocal(prev => {
-        const copy = [...prev];
-        updated.forEach(u => {
-          const idx = copy.findIndex(l => l.id === u.id);
-          if (idx > -1) copy[idx] = u;
-          else copy.push(u);
-        });
-        return copy;
+  const handleUpdateLeads = (updated: Lead[]) => {
+    setAllLeads(prev => {
+      const copy = [...prev];
+      updated.forEach(u => {
+        const idx = copy.findIndex(l => l.id === u.id);
+        if (idx > -1) copy[idx] = u;
+        else copy.push(u);
       });
-    } else {
-      // Firestore mode - sync to Firestore
-      try {
-        await firestoreMutations.batchUpsertLeads(updated);
-        // Real-time listener will auto-update UI
-      } catch (err) {
-        console.error('Error updating leads in Firestore:', err);
-        // Fallback to local state
-        setAllLeadsLocal(prev => {
-          const copy = [...prev];
-          updated.forEach(u => {
-            const idx = copy.findIndex(l => l.id === u.id);
-            if (idx > -1) copy[idx] = u;
-            else copy.push(u);
-          });
-          return copy;
-        });
-      }
-    }
+      return copy;
+    });
   };
 
   const handleStartScraping = (filters: FilterState) => {
