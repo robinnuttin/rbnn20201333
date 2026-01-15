@@ -1,6 +1,7 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Lead, AnalyticsPeriod } from '../types';
+import { smsService, smsQueueService, smsStorage, type SMSMessage, type SMSQueue } from '../services/communication/smsService';
 
 interface Props {
   leads: Lead[];
@@ -10,21 +11,112 @@ interface Props {
   onLeadClick?: (lead: Lead) => void;
 }
 
+const SMS_DAILY_LIMIT = 75;
+
 const SMSInbox: React.FC<Props> = ({ leads, scripts, setScripts, onUpdateLeads, onLeadClick }) => {
-  const [activeTab, setActiveTab] = useState<'outreach' | 'launch' | 'scripts' | 'analytics'>('outreach');
+  const [activeTab, setActiveTab] = useState<'outreach' | 'conversations' | 'queue' | 'scripts' | 'analytics'>('queue');
   const [prompt, setPrompt] = useState('');
   const [newSmsScript, setNewSmsScript] = useState({ title: '', content: '' });
+  const [selectedLeadId, setSelectedLeadId] = useState<string | null>(null);
+  const [messageText, setMessageText] = useState('');
+  const [smsData, setSmsData] = useState(smsStorage.load());
+  const [isSending, setIsSending] = useState(false);
+  const [sendingLeadId, setSendingLeadId] = useState<string | null>(null);
 
-  const pendingSMS = useMemo(() => 
-    leads.filter(l => l.outboundChannel === 'coldsms' && l.pipelineTag === 'cold'), 
+  // Sync SMS data
+  useEffect(() => {
+    setSmsData(smsStorage.load());
+  }, []);
+
+  const pendingSMS = useMemo(() =>
+    leads.filter(l => l.outboundChannel === 'coldsms' && l.pipelineTag === 'cold'),
   [leads]);
 
   const smsScripts = useMemo(() => scripts.filter(s => s.type === 'sms'), [scripts]);
+
+  const selectedLead = useMemo(() => leads.find(l => l.id === selectedLeadId), [selectedLeadId, leads]);
+
+  const selectedConversation = useMemo(() =>
+    smsData.conversations.find(c => c.leadId === selectedLeadId),
+  [selectedLeadId, smsData.conversations]);
+
+  const dailyUsage = useMemo(
+    () => smsQueueService.calculateDailyUsage(smsData.queue, new Date()),
+    [smsData.queue]
+  );
+
+  const todayQueue = useMemo(
+    () => smsQueueService.getTodayQueue(smsData.queue),
+    [smsData.queue]
+  );
 
   const handleAddScript = () => {
     if (!newSmsScript.title || !newSmsScript.content) return;
     setScripts(prev => [...prev, { ...newSmsScript, id: Date.now().toString(), type: 'sms' }]);
     setNewSmsScript({ title: '', content: '' });
+  };
+
+  const handleSendMessage = async (lead: Lead) => {
+    if (!messageText.trim()) return;
+
+    setSendingLeadId(lead.id);
+    setIsSending(true);
+
+    try {
+      const phones = smsService.getPhoneNumbers(lead);
+      if (phones.length === 0) {
+        alert('Geen telefoonnummer voor deze lead');
+        return;
+      }
+
+      const result = await smsService.sendSMS(phones[0], messageText);
+
+      if (result.success) {
+        // Add message to data
+        const newMessage: SMSMessage = {
+          id: `sms-${Date.now()}`,
+          leadId: lead.id,
+          phoneNumber: phones[0],
+          message: messageText,
+          timestamp: new Date(),
+          status: 'sent',
+          direction: 'outbound',
+          sentAt: new Date(),
+        };
+
+        const updatedConversations = smsData.conversations.map(c =>
+          c.leadId === lead.id
+            ? { ...c, messages: [...c.messages, newMessage], lastMessageAt: new Date() }
+            : c
+        );
+
+        if (!updatedConversations.find(c => c.leadId === lead.id)) {
+          updatedConversations.push({
+            leadId: lead.id,
+            phoneNumber: phones[0],
+            messages: [newMessage],
+            lastMessageAt: new Date(),
+            totalMessages: 1,
+            sentiment: 'neutral',
+          });
+        }
+
+        const updated = {
+          ...smsData,
+          messages: [...smsData.messages, newMessage],
+          conversations: updatedConversations,
+        };
+
+        smsStorage.save(updated);
+        setSmsData(updated);
+        setMessageText('');
+      } else {
+        alert('Error sending SMS: ' + result.error);
+      }
+    } finally {
+      setSendingLeadId(null);
+      setIsSending(false);
+    }
   };
 
   const handleLaunchBlitz = () => {
@@ -38,26 +130,182 @@ const SMSInbox: React.FC<Props> = ({ leads, scripts, setScripts, onUpdateLeads, 
         <div className="space-y-4">
           <h2 className="text-7xl font-black text-slate-900 tracking-tighter uppercase italic leading-none">SMS Command</h2>
           <div className="flex gap-8 mt-6">
-            <button onClick={() => setActiveTab('outreach')} className={`text-[11px] font-black uppercase tracking-[0.4em] pb-4 border-b-[6px] transition-all ${activeTab === 'outreach' ? 'text-amber-600 border-amber-600' : 'text-slate-300 border-transparent'}`}>Wachtrij</button>
-            <button onClick={() => setActiveTab('launch')} className={`text-[11px] font-black uppercase tracking-[0.4em] pb-4 border-b-[6px] transition-all ${activeTab === 'launch' ? 'text-amber-600 border-amber-600' : 'text-slate-300 border-transparent'}`}>Launch Pad</button>
+            <button onClick={() => setActiveTab('queue')} className={`text-[11px] font-black uppercase tracking-[0.4em] pb-4 border-b-[6px] transition-all ${activeTab === 'queue' ? 'text-blue-600 border-blue-600' : 'text-slate-300 border-transparent'}`}>📊 Queue ({todayQueue.length})</button>
+            <button onClick={() => setActiveTab('conversations')} className={`text-[11px] font-black uppercase tracking-[0.4em] pb-4 border-b-[6px] transition-all ${activeTab === 'conversations' ? 'text-blue-600 border-blue-600' : 'text-slate-300 border-transparent'}`}>💬 Gesprekken ({smsData.conversations.length})</button>
+            <button onClick={() => setActiveTab('outreach')} className={`text-[11px] font-black uppercase tracking-[0.4em] pb-4 border-b-[6px] transition-all ${activeTab === 'outreach' ? 'text-amber-600 border-amber-600' : 'text-slate-300 border-transparent'}`}>Manually Send</button>
             <button onClick={() => setActiveTab('scripts')} className={`text-[11px] font-black uppercase tracking-[0.4em] pb-4 border-b-[6px] transition-all ${activeTab === 'scripts' ? 'text-amber-600 border-amber-600' : 'text-slate-300 border-transparent'}`}>Scripts</button>
             <button onClick={() => setActiveTab('analytics')} className={`text-[11px] font-black uppercase tracking-[0.4em] pb-4 border-b-[6px] transition-all ${activeTab === 'analytics' ? 'text-amber-600 border-amber-600' : 'text-slate-300 border-transparent'}`}>Analytics</button>
           </div>
         </div>
-        <div className="bg-amber-500 text-slate-900 px-10 py-6 rounded-[40px] shadow-2xl flex items-center gap-10 font-black italic">
+        <div className="bg-gradient-to-r from-blue-500 to-blue-600 text-white px-10 py-6 rounded-[40px] shadow-2xl flex items-center gap-10 font-black italic">
            <div className="text-right">
-              <div className="text-[10px] font-black uppercase tracking-widest mb-1 opacity-50">Avg Response</div>
-              <div className="text-3xl tracking-tighter">32%</div>
+              <div className="text-[10px] font-black uppercase tracking-widest mb-1 opacity-80">Daily Limit</div>
+              <div className="text-3xl tracking-tighter">{dailyUsage.remaining}/{SMS_DAILY_LIMIT}</div>
            </div>
-           <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center text-3xl shadow-xl">💬</div>
+           <div className="w-16 h-16 bg-white/20 rounded-2xl flex items-center justify-center text-3xl shadow-xl">📱</div>
         </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-12 lg:p-20 custom-scrollbar pb-64">
+        {/* Queue Tab */}
+        {activeTab === 'queue' && (
+          <div className="max-w-6xl mx-auto space-y-8 animate-fadeIn">
+            <div className="bg-white p-10 rounded-[40px] border-2 border-blue-200 shadow-xl">
+              <div className="flex justify-between items-center mb-6">
+                <h3 className="text-2xl font-black uppercase italic">📅 Vandaag Queue</h3>
+                <span className="text-3xl font-black text-blue-600">{todayQueue.length}</span>
+              </div>
+              <div className="w-full h-4 bg-slate-200 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-blue-500 to-blue-600 transition-all"
+                  style={{ width: `${(dailyUsage.used / SMS_DAILY_LIMIT) * 100}%` }}
+                />
+              </div>
+              <p className="text-[12px] text-slate-500 mt-3 font-bold">{dailyUsage.used} verzonden, {dailyUsage.remaining} beschikbaar van {SMS_DAILY_LIMIT}</p>
+            </div>
+
+            {todayQueue.length === 0 ? (
+              <div className="text-center py-16">
+                <p className="text-3xl mb-2">📭</p>
+                <p className="text-slate-500 text-lg italic">Geen berichten in queue</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 gap-4">
+                {todayQueue.map((item, idx) => {
+                  const lead = leads.find(l => l.id === item.leadId);
+                  return (
+                    <div
+                      key={item.id}
+                      className="p-6 bg-white rounded-[30px] border border-slate-100 flex justify-between items-center hover:border-blue-500 transition-all shadow-lg"
+                    >
+                      <div className="flex items-center gap-6">
+                        <div className="bg-blue-100 text-blue-600 w-10 h-10 rounded-lg flex items-center justify-center font-black">
+                          {idx + 1}
+                        </div>
+                        <div>
+                          <p className="font-black text-slate-900">{item.companyName}</p>
+                          <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">"{item.message}"</p>
+                          <p className="text-[10px] text-slate-400 mt-1">{item.phoneNumber}</p>
+                        </div>
+                      </div>
+                      <span className={`px-4 py-2 rounded-full text-[10px] font-black uppercase ${
+                        item.status === 'sent'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        {item.status}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Conversations Tab */}
+        {activeTab === 'conversations' && (
+          <div className="max-w-6xl mx-auto space-y-8 animate-fadeIn">
+            {smsData.conversations.length === 0 ? (
+              <div className="text-center py-16">
+                <p className="text-3xl mb-2">💬</p>
+                <p className="text-slate-500 text-lg italic">Geen actieve gesprekken</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {smsData.conversations.map(conv => (
+                  <div
+                    key={conv.leadId}
+                    onClick={() => setSelectedLeadId(conv.leadId)}
+                    className={`p-8 rounded-[30px] border-2 cursor-pointer transition-all hover:shadow-lg ${
+                      selectedLeadId === conv.leadId
+                        ? 'bg-blue-50 border-blue-500 shadow-lg'
+                        : 'bg-white border-slate-100 hover:border-blue-300'
+                    }`}
+                  >
+                    <div className="flex justify-between items-start mb-4">
+                      <div>
+                        <p className="font-black text-slate-900">{leads.find(l => l.id === conv.leadId)?.companyName}</p>
+                        <p className="text-[11px] text-slate-500 mt-1">{conv.phoneNumber}</p>
+                      </div>
+                      <span className={`text-[10px] font-black px-3 py-1 rounded-full ${
+                        conv.sentiment === 'positive'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : conv.sentiment === 'negative'
+                            ? 'bg-red-100 text-red-700'
+                            : 'bg-slate-100 text-slate-700'
+                      }`}>
+                        {conv.sentiment}
+                      </span>
+                    </div>
+                    <p className="text-[12px] text-slate-600 mb-3 line-clamp-2">
+                      {conv.messages[conv.messages.length - 1]?.message}
+                    </p>
+                    <p className="text-[10px] text-slate-400">{conv.totalMessages} berichten</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Conversation Detail */}
+            {selectedLead && selectedConversation && (
+              <div className="fixed right-4 bottom-4 w-96 bg-white rounded-[40px] shadow-2xl border-2 border-slate-200 overflow-hidden flex flex-col max-h-96">
+                <div className="p-6 bg-gradient-to-r from-blue-500 to-blue-600 text-white">
+                  <h4 className="font-black text-lg">{selectedLead.companyName}</h4>
+                  <p className="text-[11px] opacity-80 mt-1">{selectedConversation.phoneNumber}</p>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-3">
+                  {selectedConversation.messages.map((msg) => (
+                    <div
+                      key={msg.id}
+                      className={`flex ${msg.direction === 'outbound' ? 'justify-end' : 'justify-start'}`}
+                    >
+                      <div
+                        className={`px-4 py-2 rounded-[20px] max-w-xs text-[12px] ${
+                          msg.direction === 'outbound'
+                            ? 'bg-blue-500 text-white'
+                            : 'bg-slate-100 text-slate-900'
+                        }`}
+                      >
+                        {msg.message}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="p-4 border-t border-slate-200 flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Type antwoord..."
+                    value={messageText}
+                    onChange={(e) => setMessageText(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleSendMessage(selectedLead);
+                      }
+                    }}
+                    className="flex-1 bg-slate-50 px-4 py-2 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <button
+                    onClick={() => handleSendMessage(selectedLead)}
+                    disabled={isSending || !messageText.trim()}
+                    className="bg-blue-500 text-white px-4 py-2 rounded-2xl font-black disabled:opacity-50"
+                  >
+                    📤
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Outreach Tab */}
         {activeTab === 'outreach' && (
           <div className="max-w-6xl mx-auto space-y-8 animate-fadeIn">
             {pendingSMS.map(lead => (
-              <div key={lead.id} onClick={() => onLeadClick?.(lead)} className="p-10 bg-white rounded-[50px] border border-slate-100 flex justify-between items-center group cursor-pointer hover:border-amber-500 transition-all shadow-xl">
+              <div key={lead.id} className="p-10 bg-white rounded-[50px] border border-slate-100 flex justify-between items-center group hover:border-amber-500 transition-all shadow-xl">
                 <div className="flex items-center gap-8">
                   <div className="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center text-3xl">📱</div>
                   <div>
@@ -65,28 +313,20 @@ const SMSInbox: React.FC<Props> = ({ leads, scripts, setScripts, onUpdateLeads, 
                     <div className="text-[10px] font-black text-slate-400 uppercase mt-2 tracking-widest">{lead.ceoPhone || 'Geen nr'}</div>
                   </div>
                 </div>
-                <button className="bg-slate-900 text-white px-8 py-4 rounded-3xl text-[10px] font-black uppercase">Bericht Sturen</button>
+                <button
+                  onClick={() => {
+                    setSelectedLeadId(lead.id);
+                    setActiveTab('conversations');
+                  }}
+                  className="bg-amber-600 text-white px-8 py-4 rounded-3xl text-[10px] font-black uppercase hover:bg-amber-700 transition-all"
+                >
+                  💬 Sturen
+                </button>
               </div>
             ))}
           </div>
         )}
 
-        {activeTab === 'launch' && (
-          <div className="max-w-5xl mx-auto space-y-12 animate-fadeIn">
-             <div className="bg-slate-900 p-16 rounded-[80px] shadow-4xl text-white space-y-10 relative overflow-hidden">
-                <div className="absolute top-0 right-0 p-12 opacity-5 text-8xl grayscale italic">BLITZ</div>
-                <h3 className="text-4xl font-black italic uppercase tracking-tighter">Bulk Launch Command</h3>
-                <p className="text-slate-400 text-lg font-medium max-w-2xl">Plak hier je prompt of custom bericht. De AI zal dit personaliseren voor de geselecteerde batch leads.</p>
-                <textarea 
-                  value={prompt}
-                  onChange={e => setPrompt(e.target.value)}
-                  placeholder="Typ je Blitz bericht..."
-                  className="w-full h-48 bg-white/5 border-2 border-white/10 p-10 rounded-[50px] text-xl font-black italic text-blue-400 outline-none focus:border-amber-500 transition-all resize-none"
-                />
-                <button onClick={handleLaunchBlitz} className="w-full py-8 bg-amber-500 text-slate-900 rounded-[50px] font-black uppercase text-xs tracking-[0.5em] shadow-2xl hover:bg-white transition-all">Launch SMS Blitz 🚀</button>
-             </div>
-          </div>
-        )}
 
         {activeTab === 'scripts' && (
           <div className="max-w-6xl mx-auto space-y-12 animate-fadeIn">
