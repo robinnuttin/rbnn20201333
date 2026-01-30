@@ -7,6 +7,7 @@ import Scraper from './components/Scraper';
 import ColdCallCenter from './components/ColdCallCenter';
 import EmailOutreach from './components/EmailOutreach';
 import SMSInbox from './components/SMSInbox';
+import SMSLaunchPad from './components/SMSLaunchPad';
 import FollowUp from './components/FollowUp';
 import SalesMeet from './components/SalesMeet';
 import Agenda from './components/Agenda';
@@ -148,6 +149,7 @@ const App: React.FC = () => {
           {activeApp === 'cold-calls' && <ColdCallCenter leads={allLeads} scripts={scripts} setScripts={setScripts} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} />}
           {activeApp === 'email-pipeline' && <EmailOutreach allLeads={allLeads} scripts={scripts} setScripts={setScripts} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} />}
           {activeApp === 'sms-pipeline' && <SMSInbox leads={allLeads} scripts={scripts} setScripts={setScripts} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} />}
+          {activeApp === 'sms-launch' && <SMSLaunchPad leads={allLeads} onUpdateLeads={handleUpdateLeads} />}
           {activeApp === 'follow-up' && <FollowUp leads={allLeads} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} />}
           {activeApp === 'sales-meet' && <SalesMeet sessions={[]} setSessions={() => { }} allLeads={allLeads} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} />}
           {activeApp === 'agenda' && <Agenda tasks={[]} setTasks={() => { }} leads={allLeads} />}
