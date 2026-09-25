@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import LeadDatabase from './components/LeadDatabase';
@@ -17,42 +17,21 @@ import FacebookPipeline from './components/FacebookPipeline';
 import GHLManager from './components/GHLManager';
 import LeadDetailModal from './components/LeadDetailModal';
 import Settings from './components/Settings';
+import ImessageInbox from './components/ImessageInbox';
 import { Lead, FilterState, UserConfig } from './types';
 import { discoverLeadsBatch, enrichLeadNeural } from './services/geminiService';
 import { saveLeadsToCloud, getLeadsFromCloud, initializeCloudConnection } from './services/cloudPersistenceService';
-// Firestore integration (Phase 1)
-import { initializeFirebase, getFirebaseDB, leadsService } from './services/core/firestoreService';
-import { useLeads, firestoreMutations } from './services/core/useFirestore';
-import firebaseConfig, { validateFirebaseConfig } from './config/firebase.config';
 
 const App: React.FC = () => {
   const [activeApp, setActiveApp] = useState('dashboard');
+  const [allLeads, setAllLeads] = useState<Lead[]>([]);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [isWorkerActive, setIsWorkerActive] = useState(false);
   const [workerStatus, setWorkerStatus] = useState('Standby');
-  const [scrapingQueue, setScrapingQueue] = useState<{sector: string, location: string}[]>([]);
+  const [scrapingQueue, setScrapingQueue] = useState<{ sector: string, location: string }[]>([]);
   const [enrichmentQueue, setEnrichmentQueue] = useState<Partial<Lead>[]>([]);
 
-  // Firestore integration state
-  const [useFirestore, setUseFirestore] = useState(false);
-  const [firestoreReady, setFirestoreReady] = useState(false);
-  const [firebaseError, setFirebaseError] = useState<string | null>(null);
-
-  // Firestore hooks (real-time subscription)
-  const firestoreLeads = useLeads();
-
-  // Local IndexedDB fallback
-  const [allLeadsLocal, setAllLeadsLocal] = useState<Lead[]>([]);
-
-  // Use Firestore if available and enabled, otherwise fallback to IndexedDB
-  const allLeads = useMemo(() => {
-    if (useFirestore && firestoreReady) {
-      return firestoreLeads.leads;
-    }
-    return allLeadsLocal;
-  }, [useFirestore, firestoreReady, firestoreLeads.leads, allLeadsLocal]);
-
-  const [scripts, setScripts] = useState<{id: string, title: string, content: string, type: 'call' | 'email' | 'sms'}[]>([
+  const [scripts, setScripts] = useState<{ id: string, title: string, content: string, type: 'call' | 'email' | 'sms' }[]>([
     { id: '1', title: 'Standaard Call Script', content: 'Hoi {{ceo_name}}, ik zag jullie website...', type: 'call' },
     { id: '2', title: 'Cold Email V1', content: 'Beste {{ceo_name}}, we hebben een audit gedaan...', type: 'email' },
     { id: '3', title: 'SMS Quick Intro', content: 'Robin van CrescoFlow hier! Heb je even tijd?', type: 'sms' }
@@ -65,52 +44,20 @@ const App: React.FC = () => {
     integrations: { ghl: true }
   });
 
-  // Initialize Firestore on app startup
   useEffect(() => {
-    const initApp = async () => {
-      // Try to initialize Firestore
-      try {
-        const config = validateFirebaseConfig();
-        if (config.valid) {
-          initializeFirebase(firebaseConfig);
-          setUseFirestore(true);
-          setFirestoreReady(true);
-          console.log('✅ Firestore initialized successfully');
-        } else {
-          console.warn('⚠️  Firebase config incomplete:', config.errors);
-          setFirebaseError(config.errors.join(', '));
-        }
-      } catch (err) {
-        const errorMsg = err instanceof Error ? err.message : String(err);
-        console.warn('⚠️  Firestore initialization failed:', errorMsg);
-        setFirebaseError(errorMsg);
-      }
-
-      // Always initialize IndexedDB fallback
-      try {
-        await initializeCloudConnection();
-        const leads = await getLeadsFromCloud();
-        setAllLeadsLocal(leads);
-      } catch (err) {
-        console.error('❌ IndexedDB initialization failed:', err);
-      }
+    const startup = async () => {
+      await initializeCloudConnection();
+      const leads = await getLeadsFromCloud();
+      setAllLeads(leads);
     };
-
-    initApp();
+    startup();
   }, []);
 
-  // Sync leads to storage when they change
   useEffect(() => {
-    if (allLeads.length === 0) return;
-
-    if (useFirestore && firestoreReady) {
-      // Firestore auto-syncs via real-time subscription
-      // No additional sync needed
-    } else {
-      // IndexedDB fallback
+    if (allLeads.length > 0) {
       saveLeadsToCloud(allLeads);
     }
-  }, [allLeads, useFirestore, firestoreReady]);
+  }, [allLeads]);
 
   useEffect(() => {
     let timeoutId: number;
@@ -156,38 +103,16 @@ const App: React.FC = () => {
     return () => clearTimeout(timeoutId);
   }, [isWorkerActive, scrapingQueue, enrichmentQueue, allLeads]);
 
-  const handleUpdateLeads = async (updated: Lead[]) => {
-    // Update local state
-    if (!useFirestore || !firestoreReady) {
-      // IndexedDB mode
-      setAllLeadsLocal(prev => {
-        const copy = [...prev];
-        updated.forEach(u => {
-          const idx = copy.findIndex(l => l.id === u.id);
-          if (idx > -1) copy[idx] = u;
-          else copy.push(u);
-        });
-        return copy;
+  const handleUpdateLeads = (updated: Lead[]) => {
+    setAllLeads(prev => {
+      const copy = [...prev];
+      updated.forEach(u => {
+        const idx = copy.findIndex(l => l.id === u.id);
+        if (idx > -1) copy[idx] = u;
+        else copy.push(u);
       });
-    } else {
-      // Firestore mode - sync to Firestore
-      try {
-        await firestoreMutations.batchUpsertLeads(updated);
-        // Real-time listener will auto-update UI
-      } catch (err) {
-        console.error('Error updating leads in Firestore:', err);
-        // Fallback to local state
-        setAllLeadsLocal(prev => {
-          const copy = [...prev];
-          updated.forEach(u => {
-            const idx = copy.findIndex(l => l.id === u.id);
-            if (idx > -1) copy[idx] = u;
-            else copy.push(u);
-          });
-          return copy;
-        });
-      }
-    }
+      return copy;
+    });
   };
 
   const handleStartScraping = (filters: FilterState) => {
@@ -201,33 +126,33 @@ const App: React.FC = () => {
   return (
     <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
       <Sidebar activeApp={activeApp} setActiveApp={setActiveApp} totalLeadsCount={allLeads.length} isScraping={isWorkerActive} />
-      
+
       <div className="flex-1 lg:ml-72 flex flex-col h-screen overflow-hidden relative">
         {isWorkerActive && (
           <div className="fixed top-6 right-6 z-[300] bg-slate-900 text-white px-8 py-4 rounded-[30px] shadow-4xl border-l-[10px] border-blue-500 animate-slide-up flex items-center gap-6">
-             <div className="w-3 h-3 bg-blue-500 rounded-full animate-ping"></div>
-             <div>
-                <div className="text-[10px] font-black uppercase tracking-[0.4em]">Neural Engine Active</div>
-                <div className="text-[9px] font-bold text-slate-400 uppercase">{workerStatus}</div>
-             </div>
-             <div className="text-right border-l border-white/10 pl-6">
-                <div className="text-[8px] font-black text-slate-500 uppercase">Wachtrij</div>
-                <div className="text-xs font-black">{scrapingQueue.length + enrichmentQueue.length}</div>
-             </div>
+            <div className="w-3 h-3 bg-blue-500 rounded-full animate-ping"></div>
+            <div>
+              <div className="text-[10px] font-black uppercase tracking-[0.4em]">Neural Engine Active</div>
+              <div className="text-[9px] font-bold text-slate-400 uppercase">{workerStatus}</div>
+            </div>
+            <div className="text-right border-l border-white/10 pl-6">
+              <div className="text-[8px] font-black text-slate-500 uppercase">Wachtrij</div>
+              <div className="text-xs font-black">{scrapingQueue.length + enrichmentQueue.length}</div>
+            </div>
           </div>
         )}
 
         <main className="flex-1 overflow-hidden relative">
           {activeApp === 'dashboard' && <Dashboard isSystemOnline={true} onUpdateLeads={handleUpdateLeads} allLeads={allLeads} onLeadClick={setSelectedLead} />}
-          {activeApp === 'lead-scraper' && <Scraper onStartBackground={handleStartScraping} onStopBackground={() => setIsWorkerActive(false)} isBackgroundActive={isWorkerActive} queueLength={scrapingQueue.length + enrichmentQueue.length} masterDatabase={allLeads} onLeadsFound={() => {}} />}
+          {activeApp === 'lead-scraper' && <Scraper onStartBackground={handleStartScraping} onStopBackground={() => setIsWorkerActive(false)} isBackgroundActive={isWorkerActive} queueLength={scrapingQueue.length + enrichmentQueue.length} masterDatabase={allLeads} onLeadsFound={() => { }} />}
           {activeApp === 'database' && <LeadDatabase allLeads={allLeads} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} onManualImport={(leads) => { setEnrichmentQueue(prev => [...prev, ...leads]); setIsWorkerActive(true); }} />}
           {activeApp === 'cold-calls' && <ColdCallCenter leads={allLeads} scripts={scripts} setScripts={setScripts} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} />}
           {activeApp === 'email-pipeline' && <EmailOutreach allLeads={allLeads} scripts={scripts} setScripts={setScripts} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} />}
           {activeApp === 'sms-pipeline' && <SMSInbox leads={allLeads} scripts={scripts} setScripts={setScripts} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} />}
           {activeApp === 'sms-launch' && <SMSLaunchPad leads={allLeads} onUpdateLeads={handleUpdateLeads} />}
           {activeApp === 'follow-up' && <FollowUp leads={allLeads} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} />}
-          {activeApp === 'sales-meet' && <SalesMeet sessions={[]} setSessions={() => {}} allLeads={allLeads} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} />}
-          {activeApp === 'agenda' && <Agenda tasks={[]} setTasks={() => {}} leads={allLeads} />}
+          {activeApp === 'sales-meet' && <SalesMeet sessions={[]} setSessions={() => { }} allLeads={allLeads} onUpdateLeads={handleUpdateLeads} onLeadClick={setSelectedLead} />}
+          {activeApp === 'agenda' && <Agenda tasks={[]} setTasks={() => { }} leads={allLeads} />}
           {activeApp === 'ai-coach' && <AICoach allLeads={allLeads} />}
           {activeApp === 'facebook-funnel' && <FacebookPipeline conversations={[]} allLeads={allLeads} onUpdateLeads={handleUpdateLeads} />}
           {activeApp === 'ghl-manager' && <GHLManager leads={allLeads} onUpdateLeads={handleUpdateLeads} />}

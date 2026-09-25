@@ -3,7 +3,8 @@
 import { GoogleGenAI, Type, GenerateContentResponse } from "@google/genai";
 import { FilterState, Lead } from "../types";
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const apiKey = typeof process !== 'undefined' ? process.env?.API_KEY : undefined;
+const ai = new GoogleGenAI({ apiKey: apiKey || "" });
 
 /**
  * Helper voor automatische retries bij 429 (Rate Limit) errors.
@@ -28,7 +29,7 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 2000): Pr
 export async function discoverLeadsBatch(sector: string, location: string): Promise<Partial<Lead>[]> {
   const discoveryModel = "gemini-2.5-flash";
   const parsingModel = "gemini-3-flash-preview";
-  
+
   const discoveryPrompt = `Find AT LEAST 20 active and relevant companies in the sector "${sector}" in region "${location}". 
   Use Google Maps grounding for up-to-date information. 
   FOCUS: Avoid big chains, focus on local SME businesses that need marketing help.
@@ -45,7 +46,7 @@ export async function discoverLeadsBatch(sector: string, location: string): Prom
     }));
 
     const textOutput = discoveryResponse.text || "";
-    
+
     // Fix: Explicitly type response to GenerateContentResponse to allow access to .text property.
     const parserResponse: GenerateContentResponse = await withRetry(() => ai.models.generateContent({
       model: parsingModel,
@@ -63,9 +64,9 @@ export async function discoverLeadsBatch(sector: string, location: string): Prom
               city: { type: Type.STRING },
               googleReviews: {
                 type: Type.OBJECT,
-                properties: { 
-                  score: { type: Type.NUMBER }, 
-                  count: { type: Type.INTEGER } 
+                properties: {
+                  score: { type: Type.NUMBER },
+                  count: { type: Type.INTEGER }
                 }
               }
             },
@@ -88,7 +89,7 @@ export async function discoverLeadsBatch(sector: string, location: string): Prom
 export async function enrichLeadNeural(lead: Partial<Lead>): Promise<Lead> {
   const researchModel = "gemini-3-pro-preview";
   const extractionModel = "gemini-3-flash-preview";
-  
+
   const researchPrompt = `
     PERFORM AN AGGRESSIVE NEURAL AUDIT FOR: ${lead.companyName} (${lead.city}).
     USE YOUR THINKING CAPACITY TO FIND PERSONAL DATA.
@@ -143,10 +144,10 @@ export async function enrichLeadNeural(lead: Partial<Lead>): Promise<Lead> {
             },
             socials: {
               type: Type.OBJECT,
-              properties: { 
-                instagram: { type: Type.STRING }, 
-                facebook: { type: Type.STRING }, 
-                linkedin: { type: Type.STRING } 
+              properties: {
+                instagram: { type: Type.STRING },
+                facebook: { type: Type.STRING },
+                linkedin: { type: Type.STRING }
               }
             },
             websiteScore: { type: Type.INTEGER },
@@ -159,7 +160,7 @@ export async function enrichLeadNeural(lead: Partial<Lead>): Promise<Lead> {
     }));
 
     const data = JSON.parse(extractionResponse.text || "{}");
-    
+
     return {
       ...lead,
       id: lead.id || Math.random().toString(36).substr(2, 9),
@@ -199,14 +200,14 @@ export async function askCoach(query: string, context: any) {
   const response: GenerateContentResponse = await withRetry(() => ai.models.generateContent({
     model: 'gemini-3-pro-preview',
     contents: `Context: ${JSON.stringify(context)}. Gebruiker: ${query}`,
-    config: { 
-      tools: [{ googleSearch: {} }], 
-      thinkingConfig: { thinkingBudget: 4096 } 
+    config: {
+      tools: [{ googleSearch: {} }],
+      thinkingConfig: { thinkingBudget: 4096 }
     }
   }));
-  return { 
-    text: response.text, 
-    sources: response.candidates?.[0]?.groundingMetadata?.groundingChunks || [] 
+  return {
+    text: response.text,
+    sources: response.candidates?.[0]?.groundingMetadata?.groundingChunks || []
   };
 }
 
