@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 
 interface Props {
@@ -6,71 +5,104 @@ interface Props {
   setActiveApp: (app: string) => void;
   totalLeadsCount: number;
   isScraping?: boolean;
+  syncState?: 'loading' | 'synced' | 'saving' | 'offline';
+  onSignOut?: () => void;
 }
 
-const Sidebar: React.FC<Props> = ({ activeApp, setActiveApp, totalLeadsCount, isScraping }) => {
-  const [isOpen, setIsOpen] = useState(false);
+const sections: { title: string; apps: { id: string; name: string; icon: string }[] }[] = [
+  {
+    title: 'Overzicht',
+    apps: [
+      { id: 'dashboard', name: 'Dashboard', icon: '📊' },
+      { id: 'database', name: 'Leads', icon: '🗂️' },
+      { id: 'lead-scraper', name: 'Scraper', icon: '🔍' },
+    ],
+  },
+  {
+    title: 'Outreach',
+    apps: [
+      { id: 'cold-calls', name: 'Cold Call', icon: '📞' },
+      { id: 'email-pipeline', name: 'E-mail', icon: '✉️' },
+      { id: 'sms-pipeline', name: 'SMS', icon: '💬' },
+      { id: 'sms-launch', name: 'SMS Launch Pad', icon: '🚀' },
+      { id: 'imessage-inbox', name: 'iMessage', icon: '📱' },
+      { id: 'facebook-funnel', name: 'Facebook', icon: '👥' },
+      { id: 'follow-up', name: 'Follow-up', icon: '🔄' },
+    ],
+  },
+  {
+    title: 'Werk',
+    apps: [
+      { id: 'sales-meet', name: 'Closing', icon: '🎥' },
+      { id: 'agenda', name: 'Agenda', icon: '📅' },
+      { id: 'ai-coach', name: 'AI Coach', icon: '🧠' },
+      { id: 'ghl-manager', name: 'GoHighLevel', icon: '🔗' },
+      { id: 'settings', name: 'Instellingen', icon: '⚙️' },
+    ],
+  },
+];
 
-  const apps = [
-    { id: 'dashboard', name: 'Dashboard', icon: '📊' },
-    { id: 'lead-scraper', name: 'Scraper', icon: '🔍' },
-    { id: 'database', name: 'Database', icon: '🗄️' },
-    { id: 'cold-calls', name: 'Cold Call', icon: '📞' },
-    { id: 'email-pipeline', name: 'Email Outreach', icon: '📧' },
-    { id: 'sms-pipeline', name: 'SMS Command', icon: '💬' },
-    { id: 'sms-launch', name: 'SMS Launch Pad', icon: '🚀' },
-    { id: 'facebook-funnel', name: 'Facebook Funnel', icon: '👥' },
-    { id: 'follow-up', name: 'Follow-up', icon: '🔄' },
-    { id: 'sales-meet', name: 'Closing Suite', icon: '🎥' },
-    { id: 'ai-coach', name: 'Master Brain', icon: '🧠' },
-    { id: 'agenda', name: 'Agenda', icon: '📅' },
-    { id: 'ghl-manager', name: 'GHL Control', icon: '🔗' },
-    { id: 'settings', name: 'Instellingen', icon: '⚙️' },
-    { id: 'imessage-inbox', name: 'iMessage Inbox', icon: '📩' }
-  ];
+const syncLabel = {
+  loading: { text: 'Laden…', dot: 'bg-stone-300' },
+  synced: { text: 'Opgeslagen in cloud', dot: 'bg-emerald-500' },
+  saving: { text: 'Opslaan…', dot: 'bg-amber-400' },
+  offline: { text: 'Offline — lokaal bewaard', dot: 'bg-rose-400' },
+};
+
+const Sidebar: React.FC<Props> = ({ activeApp, setActiveApp, totalLeadsCount, isScraping, syncState = 'loading', onSignOut }) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const sync = syncLabel[syncState];
 
   return (
     <>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="lg:hidden fixed top-6 left-6 z-[400] bg-slate-900 text-white p-4 rounded-2xl shadow-2xl border border-white/10"
+        aria-label="Menu"
+        className="lg:hidden fixed top-4 left-4 z-[400] bg-white border border-stone-200 text-stone-700 w-9 h-9 rounded-md shadow-sm"
       >
         {isOpen ? '✕' : '☰'}
       </button>
 
-      <div className={`fixed left-0 top-0 h-screen bg-slate-900 text-white shadow-2xl z-[350] transition-all duration-500 flex flex-col lg:w-72 ${isOpen ? 'translate-x-0 w-72' : '-translate-x-full lg:translate-x-0'}`}>
-
-        <div className="p-10 border-b border-white/5 text-center flex-shrink-0">
-          <h1 className="text-2xl font-black bg-clip-text text-transparent bg-gradient-to-r from-blue-400 to-white tracking-tighter uppercase italic">CRESCOFLOW</h1>
-          <p className="text-blue-500 text-[9px] mt-2 uppercase font-black tracking-[0.5em]">ML Revenue OS V27</p>
+      <aside
+        className={`fixed left-0 top-0 h-screen w-60 bg-[#f7f7f5] border-r border-stone-200 text-stone-700 z-[350] flex flex-col transition-transform duration-200 ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}`}
+      >
+        <div className="px-4 pt-5 pb-3 flex items-center gap-2">
+          <span className="text-lg">🌱</span>
+          <span className="text-sm font-semibold text-stone-900">CrescoFlow</span>
         </div>
 
-        <nav className="flex-1 px-6 py-8 space-y-2 overflow-y-auto custom-sidebar-scroll">
-          <div className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] mb-4 ml-6">Modules</div>
-          {apps.map((app) => (
-            <button
-              key={app.id}
-              onClick={() => { setActiveApp(app.id); setIsOpen(false); }}
-              className={`w-full flex items-center gap-5 px-6 py-4 rounded-[25px] text-[11px] font-black uppercase tracking-widest transition-all duration-300 group ${activeApp === app.id ? 'bg-blue-600 text-white shadow-xl shadow-blue-600/20 translate-x-2' : 'text-slate-400 hover:text-white hover:bg-white/5'}`}
-            >
-              <span className={`text-xl transition-transform group-hover:scale-125 duration-300 ${activeApp === app.id ? 'scale-110' : ''}`}>{app.icon}</span>
-              <span>{app.name}</span>
-            </button>
+        <nav className="flex-1 overflow-y-auto px-2 pb-4 space-y-4">
+          {sections.map(section => (
+            <div key={section.title}>
+              <div className="px-2 py-1 text-[11px] font-medium text-stone-400">{section.title}</div>
+              {section.apps.map(app => (
+                <button
+                  key={app.id}
+                  onClick={() => { setActiveApp(app.id); setIsOpen(false); }}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left transition-colors ${activeApp === app.id ? 'bg-stone-200/70 text-stone-900 font-medium' : 'hover:bg-stone-200/50'}`}
+                >
+                  <span className="w-5 text-center">{app.icon}</span>
+                  <span className="truncate">{app.name}</span>
+                </button>
+              ))}
+            </div>
           ))}
         </nav>
 
-        <div className="p-8 border-t border-white/5 space-y-4 flex-shrink-0">
-          <div className="bg-white/5 p-6 rounded-[30px] border border-white/10 flex items-center justify-between">
-            <div>
-              <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest mb-1">Total Assets</div>
-              <div className="text-xl font-black italic">{totalLeadsCount.toLocaleString()} <span className="text-[10px] text-blue-500 not-italic">Leads</span></div>
-            </div>
-            {isScraping && (
-              <div className="w-3 h-3 bg-blue-500 rounded-full animate-ping"></div>
-            )}
+        <div className="border-t border-stone-200 px-4 py-3 space-y-2 text-xs text-stone-500">
+          <div className="flex items-center justify-between">
+            <span>{totalLeadsCount.toLocaleString('nl-BE')} leads</span>
+            {isScraping && <span className="text-amber-600">● scraping</span>}
           </div>
+          <div className="flex items-center gap-2">
+            <span className={`w-2 h-2 rounded-full ${sync.dot}`} />
+            <span>{sync.text}</span>
+          </div>
+          {onSignOut && (
+            <button onClick={onSignOut} className="text-stone-400 hover:text-stone-700">Uitloggen</button>
+          )}
         </div>
-      </div>
+      </aside>
     </>
   );
 };

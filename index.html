@@ -6,13 +6,28 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>CrescoFlow Revenue OS</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    // Notion-like theme: warm neutrals, one calm accent, soft radii.
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            slate: { 50:'#fbfbfa',100:'#f7f7f5',200:'#ebebea',300:'#dcdcda',400:'#a5a5a2',500:'#787774',600:'#5f5e5b',700:'#454441',800:'#37352f',900:'#2f2e2b',950:'#191919' },
+            blue: { 50:'#eef4fb',100:'#dbe7f6',200:'#b7cfec',300:'#8fb3e0',400:'#5e91d0',500:'#2f74c0',600:'#2383e2',700:'#1f6fc0',800:'#1c5a9b',900:'#173f6b' },
+          },
+          boxShadow: { '4xl': '0 8px 24px rgba(15,15,15,0.08)' },
+        },
+      },
+    };
+  </script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
     rel="stylesheet">
   <style>
     body {
-      font-family: 'Inter', sans-serif;
-      background-color: #f8fafc;
-      color: #0f172a;
+      font-family: 'Inter', ui-sans-serif, -apple-system, 'Segoe UI', sans-serif;
+      background-color: #ffffff;
+      color: #37352f;
+      -webkit-font-smoothing: antialiased;
       margin: 0;
       padding: 0;
     }
@@ -90,6 +105,13 @@
     .animate-slide-up {
       animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
+    /* Calm down legacy "enterprise" styling across all modules. */
+    .font-black { font-weight: 600 !important; }
+    .italic { font-style: normal !important; }
+    [class*="tracking-[0."], .tracking-widest { letter-spacing: 0.02em !important; }
+    [class*="rounded-[4"], [class*="rounded-[5"], [class*="rounded-[6"] { border-radius: 14px !important; }
+    [class*="rounded-[2"], [class*="rounded-[3"] { border-radius: 10px !important; }
+    [class*="shadow-2xl"], [class*="shadow-xl"] { box-shadow: 0 1px 3px rgba(15,15,15,0.06), 0 4px 12px rgba(15,15,15,0.05) !important; }
   </style>
 
 </head>
