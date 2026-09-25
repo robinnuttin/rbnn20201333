@@ -49,7 +49,7 @@ export interface SMSConversation {
 }
 
 const SMS_DAILY_LIMIT = 75;
-const MCP_SERVER_URL = process.env.MCP_SERVER_URL || 'http://localhost:3001';
+const MCP_SERVER_URL = (import.meta as any).env?.VITE_MCP_SERVER_URL || 'http://localhost:3001';
 const MCP_TIMEOUT = 30000; // 30 seconds
 
 // ============================================================================
@@ -82,7 +82,7 @@ export const smsService = {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.MCP_SERVER_TOKEN || ''}`,
+          'Authorization': `Bearer ${(import.meta as any).env?.VITE_MCP_SERVER_TOKEN || ''}`,
         },
         body: JSON.stringify({
           phoneNumber,

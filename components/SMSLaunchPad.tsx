@@ -179,7 +179,7 @@ const SMSLaunchPad: React.FC<Props> = ({ leads, onUpdateLeads }) => {
                 📝 Bericht Template
               </h3>
               <p className="text-[12px] text-slate-500 uppercase tracking-wider">
-                Gebruik {{ceo_name}}, {{company_name}}, {{sector}}, {{city}}
+                Gebruik {'{{ceo_name}}, {{company_name}}, {{sector}}, {{city}}'}
               </p>
             </div>
 
