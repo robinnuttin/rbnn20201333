@@ -2,8 +2,8 @@
 import { Lead, UserConfig, GHLMessage, Interaction } from "../types";
 
 const GHL_BASE_URL = 'https://services.leadconnectorhq.com';
-// NIEUWE ENTERPRISE CREDENTIALS
-const MASTER_KEY = 'pit-fc316bc9-4464-46eb-98a8-dc96f326f1a6';
+// Set the GHL key per user in Instellingen (saved in Supabase); never hardcode it in the bundle.
+const MASTER_KEY: string = (import.meta as any).env?.VITE_GHL_API_KEY || '';
 const MASTER_LOCATION_ID = 'CeF7k7kG7kpfasFadIQR';
 
 const getHeaders = (token?: string) => ({

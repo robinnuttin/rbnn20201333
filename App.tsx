@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './components/Dashboard';
 import LeadDatabase from './components/LeadDatabase';
@@ -21,8 +21,10 @@ import ImessageInbox from './components/ImessageInbox';
 import { Lead, FilterState, UserConfig } from './types';
 import { discoverLeadsBatch, enrichLeadNeural } from './services/geminiService';
 import { saveLeadsToCloud, getLeadsFromCloud, initializeCloudConnection } from './services/cloudPersistenceService';
+import { fetchRemoteLeads, pushLeads, fetchSetting, saveSetting, diffLeads } from './services/cloudSync';
+import { supabase } from './services/supabaseClient';
 
-const App: React.FC = () => {
+const App: React.FC<{ userEmail?: string }> = ({ userEmail }) => {
   const [activeApp, setActiveApp] = useState('dashboard');
   const [allLeads, setAllLeads] = useState<Lead[]>([]);
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
@@ -39,25 +41,70 @@ const App: React.FC = () => {
 
   const [userConfig, setUserConfig] = useState<UserConfig>({
     username: 'Enterprise Admin',
-    email: 'admin@crescoflow.be',
-    ghlApiKey: 'pit-fc316bc9-4464-46eb-98a8-dc96f326f1a6',
+    email: userEmail || '',
+    ghlApiKey: '',
     integrations: { ghl: true }
   });
+
+  const [syncState, setSyncState] = useState<'loading' | 'synced' | 'saving' | 'offline'>('loading');
+  const syncedRef = useRef<Map<string, string>>(new Map());
+  const loadedRef = useRef(false);
 
   useEffect(() => {
     const startup = async () => {
       await initializeCloudConnection();
-      const leads = await getLeadsFromCloud();
-      setAllLeads(leads);
+      const local = await getLeadsFromCloud();
+      try {
+        const [remote, savedScripts, savedConfig] = await Promise.all([
+          fetchRemoteLeads(),
+          fetchSetting<typeof scripts>('scripts'),
+          fetchSetting<UserConfig>('userConfig'),
+        ]);
+        const merged = new Map(remote.map(l => [l.id, l]));
+        remote.forEach(l => syncedRef.current.set(l.id, JSON.stringify(l)));
+        // Leads that only exist in this browser (e.g. from before cloud sync) are kept and uploaded.
+        local.forEach(l => { if (!merged.has(l.id)) merged.set(l.id, l); });
+        setAllLeads([...merged.values()]);
+        if (savedScripts) setScripts(savedScripts);
+        if (savedConfig) setUserConfig(savedConfig);
+        setSyncState('synced');
+      } catch (e) {
+        console.error('[Supabase] Initial load failed, using local cache', e);
+        setAllLeads(local);
+        setSyncState('offline');
+      }
+      loadedRef.current = true;
     };
     startup();
   }, []);
 
   useEffect(() => {
-    if (allLeads.length > 0) {
-      saveLeadsToCloud(allLeads);
-    }
+    if (!loadedRef.current) return;
+    if (allLeads.length > 0) saveLeadsToCloud(allLeads);
+    const changed = diffLeads(allLeads, syncedRef.current);
+    if (changed.length === 0) return;
+    const t = window.setTimeout(async () => {
+      setSyncState('saving');
+      try {
+        await pushLeads(changed);
+        changed.forEach(l => syncedRef.current.set(l.id, JSON.stringify(l)));
+        setSyncState('synced');
+      } catch (e) {
+        console.error('[Supabase] Lead sync failed', e);
+        setSyncState('offline');
+      }
+    }, 1500);
+    return () => clearTimeout(t);
   }, [allLeads]);
+
+  useEffect(() => {
+    if (!loadedRef.current) return;
+    const t = window.setTimeout(() => {
+      saveSetting('scripts', scripts).catch(e => console.error('[Supabase] Scripts sync failed', e));
+      saveSetting('userConfig', userConfig).catch(e => console.error('[Supabase] Config sync failed', e));
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [scripts, userConfig]);
 
   useEffect(() => {
     let timeoutId: number;
@@ -124,21 +171,15 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="flex min-h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden">
-      <Sidebar activeApp={activeApp} setActiveApp={setActiveApp} totalLeadsCount={allLeads.length} isScraping={isWorkerActive} />
+    <div className="flex min-h-screen bg-white font-sans text-stone-800 overflow-hidden">
+      <Sidebar activeApp={activeApp} setActiveApp={setActiveApp} totalLeadsCount={allLeads.length} isScraping={isWorkerActive} syncState={syncState} onSignOut={() => supabase.auth.signOut()} />
 
-      <div className="flex-1 lg:ml-72 flex flex-col h-screen overflow-hidden relative">
+      <div className="flex-1 lg:ml-60 flex flex-col h-screen overflow-hidden relative">
         {isWorkerActive && (
-          <div className="fixed top-6 right-6 z-[300] bg-slate-900 text-white px-8 py-4 rounded-[30px] shadow-4xl border-l-[10px] border-blue-500 animate-slide-up flex items-center gap-6">
-            <div className="w-3 h-3 bg-blue-500 rounded-full animate-ping"></div>
-            <div>
-              <div className="text-[10px] font-black uppercase tracking-[0.4em]">Neural Engine Active</div>
-              <div className="text-[9px] font-bold text-slate-400 uppercase">{workerStatus}</div>
-            </div>
-            <div className="text-right border-l border-white/10 pl-6">
-              <div className="text-[8px] font-black text-slate-500 uppercase">Wachtrij</div>
-              <div className="text-xs font-black">{scrapingQueue.length + enrichmentQueue.length}</div>
-            </div>
+          <div className="fixed bottom-4 right-4 z-[300] bg-white border border-stone-200 shadow-lg rounded-lg px-4 py-3 flex items-center gap-3 text-sm">
+            <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse"></span>
+            <span className="text-stone-700">{workerStatus}</span>
+            <span className="text-stone-400">· {scrapingQueue.length + enrichmentQueue.length} in wachtrij</span>
           </div>
         )}
 
@@ -156,6 +197,7 @@ const App: React.FC = () => {
           {activeApp === 'ai-coach' && <AICoach allLeads={allLeads} />}
           {activeApp === 'facebook-funnel' && <FacebookPipeline conversations={[]} allLeads={allLeads} onUpdateLeads={handleUpdateLeads} />}
           {activeApp === 'ghl-manager' && <GHLManager leads={allLeads} onUpdateLeads={handleUpdateLeads} />}
+          {activeApp === 'imessage-inbox' && <ImessageInbox leads={allLeads} />}
           {activeApp === 'settings' && <Settings config={userConfig} onUpdateConfig={setUserConfig} />}
         </main>
 
