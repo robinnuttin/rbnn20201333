@@ -18,6 +18,7 @@ const Sidebar: React.FC<Props> = ({ activeApp, setActiveApp, totalLeadsCount, is
     { id: 'cold-calls', name: 'Cold Call', icon: '📞' },
     { id: 'email-pipeline', name: 'Email Outreach', icon: '📧' },
     { id: 'sms-pipeline', name: 'SMS Command', icon: '💬' },
+    { id: 'sms-launch', name: 'SMS Launch Pad', icon: '🚀' },
     { id: 'facebook-funnel', name: 'Facebook Funnel', icon: '👥' },
     { id: 'follow-up', name: 'Follow-up', icon: '🔄' },
     { id: 'sales-meet', name: 'Closing Suite', icon: '🎥' },
